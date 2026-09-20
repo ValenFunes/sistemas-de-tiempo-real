@@ -1,6 +1,6 @@
 # Sistemas de Tiempo Real
 
-Trabajos prácticos de la materia Sistemas de Tiempo Real (UFASTA) — control e instrumentación industrial.
+Trabajos prácticos de la materia Sistemas de Tiempo Real (UFASTA)
 
 ## Instalación
 
