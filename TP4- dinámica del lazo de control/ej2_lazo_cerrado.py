@@ -77,7 +77,7 @@ def modelo_lazo_cerrado(Ti, t, v, kc, kv, kt, kh, Te, C1, C2, V, M):
 
 
 def simular_lazo_cerrado(kc, v, dt, Ti0, kv, kt, kh, Te, C1, C2, V, M,
-                         n_tau=5, dt_rel_max=None, tf=None):
+                         n_tau=5, tf=None):
     """
     Simula el lazo cerrado para un kc dado y devuelve un diccionario con la
     simulación y los valores analíticos, listo para graficar y comparar.
@@ -87,9 +87,6 @@ def simular_lazo_cerrado(kc, v, dt, Ti0, kv, kt, kh, Te, C1, C2, V, M,
       arma el eje de tiempo con linspace: solo coinciden si tf/dt es entero).
     - tf (opcional): fuerza un horizonte común (para comparar curvas en un
       mismo eje de tiempo); si no se indica, se usan n_tau * tau_LC.
-    - dt_rel_max (opcional): si se indica, el paso se achica para que
-      dt <= dt_rel_max * tau_LC. Con kc grandes tau_LC es muy chica y un dt
-      fijo deja de ser adecuado para Euler.
     """
     kp = ganancia_proceso(M, C2, V)
     K = ganancia_lazo(kp, kv, kt, kc, kh)
@@ -98,8 +95,6 @@ def simular_lazo_cerrado(kc, v, dt, Ti0, kv, kt, kh, Te, C1, C2, V, M,
     Ti_ss = valor_estacionario_lc(v, Te, K)
     ee = error_estacionario(v, Te, K)
 
-    if dt_rel_max is not None:
-        dt = min(dt, dt_rel_max * tau_lc)
     horizonte = tf if tf is not None else n_tau * tau_lc
     n_pasos = math.ceil(horizonte / dt - 1e-9)
     tf = n_pasos * dt
@@ -247,8 +242,7 @@ if __name__ == "__main__":
     kc_extra = [1000, 1500, 5000]   # con los del enunciado el EE sigue siendo grande
     valores_kc = kc_enunciado + kc_extra
 
-    resultados = [simular_lazo_cerrado(kc, v, dt, Ti0, dt_rel_max=0.05,
-                                       **lazo, **proceso)
+    resultados = [simular_lazo_cerrado(kc, v, dt, Ti0, **lazo, **proceso)
                   for kc in valores_kc]
 
     # --- Verificación: analítico vs simulado ---
@@ -278,7 +272,7 @@ if __name__ == "__main__":
     # Cada kc conserva su color en todos los gráficos de comparación.
     colores = {kc: f"C{i}" for i, kc in enumerate(valores_kc)}
     tf_comun = max(5 * r["tau_lc"] for r in resultados)
-    comparacion = [simular_lazo_cerrado(kc, v, dt, Ti0, dt_rel_max=0.05,
+    comparacion = [simular_lazo_cerrado(kc, v, dt, Ti0,
                                         tf=tf_comun, **lazo, **proceso)
                    for kc in valores_kc]
 
@@ -292,7 +286,7 @@ if __name__ == "__main__":
     tf_g = 5 * max(tau_la, *(r["tau_lc"] for r in resultados))
 
     lazo_abierto = simular_lazo_abierto(Cg_la, dt, tf_g, Ti0, **proceso)
-    comparacion_g = [simular_lazo_cerrado(kc, v, dt, Ti0, dt_rel_max=0.05,
+    comparacion_g = [simular_lazo_cerrado(kc, v, dt, Ti0,
                                           tf=tf_g, **lazo, **proceso)
                      for kc in valores_kc]
 
