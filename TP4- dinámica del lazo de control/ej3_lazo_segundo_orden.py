@@ -25,6 +25,8 @@ import matplotlib.pyplot as plt
 
 from simulacion_euler import (modelo_temperatura, constante_de_tiempo,
                               graficar_respuesta)
+from ej2_lazo_cerrado import (ganancia_proceso, ganancia_lazo,
+                              valor_estacionario_lc, error_estacionario)
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +81,7 @@ def modelo_lazo_2do_orden(y, t, v, kc, kt, kh, FSV, FK, Te, C1, C2, V, M):
 
 
 # ---------------------------------------------------------------------------
-# 3) CÁLCULO ANALÍTICO: RAÍCES DEL LAZO
+# 3) CÁLCULOS ANALÍTICOS DEL LAZO
 # ---------------------------------------------------------------------------
 def raices_del_lazo(kc, kt, kh, FSV, FK, C1, C2, V, M):
     """
@@ -102,11 +104,22 @@ def raices_del_lazo(kc, kt, kh, FSV, FK, C1, C2, V, M):
     return np.linalg.eigvals(A)
 
 
+def ganancia_estatica_valvula(FSV, FK):
+    """
+    kv_equiv = FK / FSV  [(m3/h) / psi]
+
+    En estacionario dCg/dt = 0, entonces Cg = (FK/FSV) . P: la válvula real se
+    comporta como una válvula lineal de esa ganancia (la dinámica solo afecta
+    CÓMO se llega al estacionario, no ADÓNDE).
+    """
+    return FK / FSV
+
+
 # ---------------------------------------------------------------------------
 # 4) SIMULACIÓN
 # ---------------------------------------------------------------------------
 def simular_lazo_2do_orden(kc, v, dt, Ti0, kt, kh, FSV, FK, Te, C1, C2, V, M,
-                           n_tau=5, tf=None):
+                           n_tau=8, tf=None):
     """
     Simula el lazo cerrado de 2do orden para un kc dado.
 
@@ -115,9 +128,22 @@ def simular_lazo_2do_orden(kc, v, dt, Ti0, kt, kh, FSV, FK, Te, C1, C2, V, M,
     Horizonte: n_tau constantes de tiempo del modo MÁS LENTO del lazo,
     tau_dom = 1/|Re(lambda)| mínimo (en 1er orden es simplemente tau).
     Se redondea hacia arriba a un múltiplo de dt.
+
+    Con n_tau = 8 la envolvente de la oscilación decae a e^-8 = 0,03 % de su
+    valor inicial; con 5 todavía queda ~0,7 % (hasta 0,05 ºC con kc grandes) y
+    el valor final simulado no llega a coincidir con el estacionario teórico.
+
+    Además del resultado simulado, devuelve K y el Ti estacionario teórico
+    (mismas fórmulas del Ejercicio 2, usando la ganancia estática de la válvula).
     """
     lam = raices_del_lazo(kc, kt, kh, FSV, FK, C1, C2, V, M)
     tau_dom = 1.0 / np.min(np.abs(lam.real))
+
+    kp = ganancia_proceso(M, C2, V)
+    kv_eq = ganancia_estatica_valvula(FSV, FK)
+    K = ganancia_lazo(kp, kv_eq, kt, kc, kh)
+    Ti_ss = valor_estacionario_lc(v, Te, K)
+    ee = error_estacionario(v, Te, K)
 
     horizonte = tf if tf is not None else n_tau * tau_dom
     n_pasos = math.ceil(horizonte / dt - 1e-9)
@@ -127,7 +153,8 @@ def simular_lazo_2do_orden(kc, v, dt, Ti0, kt, kh, FSV, FK, Te, C1, C2, V, M,
                               v=v, kc=kc, kt=kt, kh=kh, FSV=FSV, FK=FK,
                               Te=Te, C1=C1, C2=C2, V=V, M=M)
 
-    return {"kc": kc, "lam": lam, "tau_dom": tau_dom,
+    return {"kc": kc, "K": K, "Ti_ss": Ti_ss, "ee": ee,
+            "lam": lam, "tau_dom": tau_dom,
             "t": t, "Ti": y[:, 0], "Cg": y[:, 1], "Ti0": Ti0, "v": v, "dt": dt}
 
 
@@ -136,21 +163,39 @@ def simular_lazo_2do_orden(kc, v, dt, Ti0, kt, kh, FSV, FK, Te, C1, C2, V, M,
 # ---------------------------------------------------------------------------
 def graficar_lazo_2do_orden(res):
     """
-    Gráfico del comportamiento dinámico de un kc: curva de Ti y recta del
-    valor deseado. La curva, los ejes y la grilla vienen de graficar_respuesta
-    (Ejercicio 1).
+    Gráfico del comportamiento dinámico de un kc: curva de Ti, recta del valor
+    deseado y recta del Ti estacionario teórico. La curva, los ejes y la
+    grilla vienen de graficar_respuesta (Ejercicio 1).
     """
-    t, Ti, v, Ti0 = res["t"], res["Ti"], res["v"], res["Ti0"]
+    t, Ti, v, Ti0, Ti_ss = (res["t"], res["Ti"], res["v"], res["Ti0"],
+                            res["Ti_ss"])
 
     ax = graficar_respuesta(
         t, Ti, label="Ti simulada",
-        titulo=f"Ejercicio 3 - Lazo cerrado de 2do orden, kc = {res['kc']}")
+        titulo=(f"Ejercicio 3 - Lazo cerrado de 2do orden, kc = {res['kc']} "
+                f"(K = {res['K']:.2f})"))
+
+    # Valor deseado (recta) y valor estacionario teórico
     ax.axhline(v, color="tab:red", linewidth=1.5,
                label=f"Valor deseado = {v:g} ºC")
+    ax.axhline(Ti_ss, color="tab:green", linestyle=":", linewidth=1.5,
+               label=f"Ti estacionario = {Ti_ss:.2f} ºC")
+
+    # Error estacionario: distancia entre el valor deseado y Ti estacionario
+    ee = res["ee"]
+    x_ee = 0.95 * t[-1]
+    ax.annotate("", xy=(x_ee, v), xytext=(x_ee, Ti_ss),
+                arrowprops=dict(arrowstyle="<->", color="black"))
+    ax.annotate(f"EE = {ee:.3f} ºC", xy=(x_ee, v), xytext=(0, 5),
+                textcoords="offset points", ha="center", va="bottom",
+                fontsize=9)
 
     # Con oscilación la curva puede pasarse de v: el eje se ajusta para verla
     ax.set_ylim(Ti0 - 1, max(v, Ti.max()) + 1)
-    ax.legend(loc="lower right", fontsize=9)
+    # Leyenda debajo del gráfico (en una fila): nunca tapa la curva y la
+    # imagen no se ensancha hacia los costados
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=3,
+              fontsize=9)
     return ax
 
 
@@ -181,7 +226,8 @@ if __name__ == "__main__":
     # --- a) Simulación para cada kc ---
     kc_ej2 = [10, 25, 50, 100, 500]   # los del Ejercicio 2
     kc_extra = [1000]                 # agregado pedido en el Ejercicio 3
-    valores_kc = kc_ej2 + kc_extra
+    kc_tendencia = [700, 2000, 5000]  # extras para ver la tendencia
+    valores_kc = sorted(kc_ej2 + kc_extra + kc_tendencia)
 
     resultados = [simular_lazo_2do_orden(kc, v, dt, Ti0, **lazo, **valvula,
                                          **proceso)
@@ -189,13 +235,16 @@ if __name__ == "__main__":
 
     # --- Resumen de la simulación ---
     print(f"Valor deseado = {v} ºC | Ti inicial = {Ti0} ºC | dt = {dt} h\n")
-    print(f"{'kc':>6} {'lambda 1':>20} {'lambda 2':>20} {'respuesta':>16} "
-          f"{'tf [h]':>8} {'Ti máx [ºC]':>12} {'Ti final [ºC]':>14}")
+    print(f"{'kc':>6} {'K':>6} {'lambda 1':>20} {'respuesta':>12} "
+          f"{'tf [h]':>8} {'Ti máx [ºC]':>12} {'Ti_ss teór.':>12} "
+          f"{'Ti final sim.':>14} {'EE teór.':>9} {'EE sim.':>8}")
     for r in resultados:
-        l1, l2 = r["lam"]
+        l1 = r["lam"][0]
         tipo = "oscilatoria" if abs(l1.imag) > 1e-12 else "sin oscilar"
-        print(f"{r['kc']:>6} {l1:>20.4f} {l2:>20.4f} {tipo:>16} "
-              f"{r['t'][-1]:>8.2f} {r['Ti'].max():>12.3f} {r['Ti'][-1]:>14.3f}")
+        print(f"{r['kc']:>6} {r['K']:>6.2f} {l1:>20.4f} {tipo:>12} "
+              f"{r['t'][-1]:>8.2f} {r['Ti'].max():>12.3f} "
+              f"{r['Ti_ss']:>12.3f} {r['Ti'][-1]:>14.3f} "
+              f"{r['ee']:>9.3f} {v - r['Ti'][-1]:>8.3f}")
 
     # --- Un gráfico por cada kc ---
     for r in resultados:
