@@ -178,3 +178,4 @@ if __name__ == "__main__":
     ax2.figure.savefig("ejercicio1_sensibilidad_V.png", dpi=150, bbox_inches="tight")
 
     print("\nGráficos guardados: ejercicio1_respuesta.png, ejercicio1_sensibilidad_V.png")
+    

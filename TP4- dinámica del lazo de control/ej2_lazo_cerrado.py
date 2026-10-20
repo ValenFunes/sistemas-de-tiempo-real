@@ -109,7 +109,7 @@ def simular_lazo_cerrado(kc, v, dt, Ti0, kv, kt, kh, Te, C1, C2, V, M,
 
 def simular_lazo_abierto(Cg, dt, tf, Ti0, Te, C1, C2, V, M):
     """
-    Lazo abierto del Ejercicio 1: Cg constante, sin realimentación.
+    Lazo abierto: Cg constante, sin realimentación.
     Reutiliza modelo_temperatura, constante_de_tiempo y valor_estacionario.
     """
     n_pasos = math.ceil(tf / dt - 1e-9)
