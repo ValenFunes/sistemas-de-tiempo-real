@@ -24,7 +24,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from simulacion_euler import (modelo_temperatura, constante_de_tiempo,
-                              graficar_respuesta)
+                              graficar_respuesta, comparar_respuestas)
 from ej2_lazo_cerrado import (ganancia_proceso, ganancia_lazo,
                               valor_estacionario_lc, error_estacionario)
 
@@ -197,7 +197,39 @@ def graficar_lazo_2do_orden(res):
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=3,
               fontsize=9)
     return ax
-
+def graficar_comparacion(resultados, colores=None,
+                         titulo="Ejercicio 3 - Comparación de valores de kc"):
+    """
+    Todas las curvas en un mismo gráfico (inciso d).
+    Reutiliza comparar_respuestas (Ejercicio 1) y le agrega la recta del
+    valor deseado.
+ 
+    resultados : lista de diccionarios de simular_lazo_2do_orden
+    colores    : (opcional) {kc: color} para mantener el mismo color por kc
+                 en distintos gráficos
+    """
+    v, Ti0 = resultados[0]["v"], resultados[0]["Ti0"]
+    curvas = [(r["t"], r["Ti"], f"kc = {r['kc']}  (K = {r['K']:g})")
+              for r in resultados]
+    ax = comparar_respuestas(curvas, titulo=titulo)
+    lineas = list(ax.lines)   # una línea por curva, en el mismo orden
+ 
+    if colores is not None:
+        for r, linea in zip(resultados, lineas):
+            linea.set_color(colores[r["kc"]])
+            linea.set_linewidth(1.6)
+ 
+    ax.axhline(v, color="black", linewidth=1.5,
+               label=f"Valor deseado = {v:g} ºC")
+ 
+    # Con oscilación las curvas pueden pasarse de v: el eje se ajusta
+    ymax = max(r["Ti"].max() for r in resultados)
+    ax.set_ylim(Ti0 - 1, max(v, ymax) + 1)
+ 
+    # Leyenda debajo del gráfico para que no tape las curvas
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=3,
+              fontsize=9)
+    return ax
 
 # ---------------------------------------------------------------------------
 # 6) RESOLUCIÓN DEL EJERCICIO 3
@@ -255,3 +287,18 @@ if __name__ == "__main__":
 
     print("\nGráficos guardados: " +
           ", ".join(f"ejercicio3_kc{r['kc']}.png" for r in resultados))
+    
+    # --- d) Comparación: todas las curvas en un mismo gráfico ---
+    # Mismo horizonte para todas (el del lazo más lento) para que compartan eje.
+    # Cada kc conserva su color.
+    colores = {kc: f"C{i}" for i, kc in enumerate(valores_kc)}
+    tf_comun = max(r["t"][-1] for r in resultados)
+    comparacion = [simular_lazo_2do_orden(kc, v, dt, Ti0, tf=tf_comun,
+                                          **lazo, **valvula, **proceso)
+                   for kc in valores_kc]
+ 
+    ax = graficar_comparacion(comparacion, colores=colores)
+    ax.figure.savefig("ejercicio3_comparacion.png", dpi=150,
+                      bbox_inches="tight")
+    plt.close(ax.figure)
+    print("Gráfico de comparación: ejercicio3_comparacion.png") 
