@@ -170,12 +170,14 @@ if __name__ == "__main__":
     v, Ti0, dt = 30.0, 20.0, 0.0125
 
     # ---------------- 1) Acción PD ----------------
-    casos_pd = [(300, 100), (300, 500), (500, 100), (500, 500), (700, 100), 
+    casos_pd = [(500, 100), (500, 500), (700, 100), 
                 (700, 500), (1000, 100), (1000, 500), (1200, 100),
                 (1200, 500)]
+    # buscamos los valores óptimos dependiendo de qué objetivo querramos conseguir
+    casos_objetivos = [(2000, 1500), (1000, 1000), (500, 750)]
 
     resultados = [simular_lazo_pid(kc, kd, 0.0, v, dt, Ti0, **lazo, **valvula,
-                                   **proceso) for kc, kd in casos_pd]
+                                   **proceso) for kc, kd in casos_objetivos]
 
     print(f"{'caso':>16} {'tf [h]':>8} {'Ti máx':>8} {'Ti final':>9} {'Ti_ss':>8}")
     for r in resultados:
@@ -195,13 +197,15 @@ if __name__ == "__main__":
     tf_comun = max(r["t"][-1] for r in resultados)
     comparacion = [simular_lazo_pid(kc, kd, 0.0, v, dt, Ti0, tf=tf_comun,
                                     **lazo, **valvula, **proceso)
-                   for kc, kd in casos_pd]
+                   for kc, kd in casos_objetivos]
 
-    colores = {300: "C0", 500: "C1", 700: "C2", 1000: "C3", 1200: "C4"}
+    # colores = {500: "C0", 700: "C1", 1000: "C2", 1200: "C3"}
+    colores = {500: "C0", 2000: "C1", 1000: "C2"}
+    
     estilos = [dict(color=colores[r["kc"]],
-               linestyle="-" if r["kd"] == 100 else "--")
+               linestyle="-" if r["kd"] == 2000 else "--")
                for r in comparacion]
     ax = graficar_comparacion_pid(comparacion, estilos,
-                                  "TP5 - Acción PD: comparación", t_max=15)
+                                  "TP5 - Acción PD: comparación", t_max=10)
     ax.figure.savefig("tp5_pd_comparacion.png", dpi=150, bbox_inches="tight")
     plt.close(ax.figure)
