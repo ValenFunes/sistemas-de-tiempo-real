@@ -1,0 +1,59 @@
+Proceso y lazo (TP4 y TP5)
+
+Símbolo	Significado	Valor / unidad
+Ti	Temperatura del recinto	ºC
+Te	Temperatura exterior	20 ºC
+Ti0	Temperatura inicial del recinto	20 ºC
+v	Valor deseado (set point)	30 ºC
+Cg	Caudal de gas	m³/h
+M	Calor aportado por m³ de gas	10 cal/m³
+C1 (C en TP5)	Capacidad calorífica del recinto	100 cal/ºC
+C2 (K en TP5)	Coeficiente de pérdida de calor	1 cal/(h·m³·ºC)
+V	Volumen del recinto	50 m³
+τ (tau)	Constante de tiempo del proceso = C1/(C2·V)	2 h
+kp	Ganancia del proceso = M/(C2·V)	0,2 ºC/(m³/h)
+kv	Ganancia de la válvula (Ej. 2); en el Ej. 3 equivale a FK/FSV	2 (m³/h)/psi
+FSV	Constante de la válvula real (relaciona presión con aceleración del caudal)	2,5 psi·h²/m³
+FK	Constante de tiempo de la válvula	5 h
+kt	Ganancia del transductor I/P	1 psi/mA
+kh	Ganancia del elemento de medición	0,05 mA/ºC
+ka	Ganancia que convierte el valor deseado a mA (ka = kh)	mA/ºC
+r	Referencia: valor deseado en mA, ka·v	mA
+c, c1	c: variable controlada (Ti). c1: su medición realimentada, kh·Ti	ºC, mA
+e	Error, r − c1 = kh·(v − Ti)	mA
+m	Salida del controlador	mA
+P (ΔP)	Presión a la salida del transductor	psi
+K (TP4)	Ganancia del lazo, kp·kv·kt·kc·kh = 0,02·kc	adimensional
+EE	Error estacionario, (v − Te)/(1 + K) en P y PD	ºC
+Ti_ss	Ti en estado estacionario (ss = steady state)	ºC
+
+Acciones de control y análisis
+
+Sigla	Significado
+P, PD, PI, PID	Proporcional, proporcional + derivativa, proporcional + integral, y las tres juntas
+kc, kd, ki	Constantes proporcional, derivativa e integral del controlador
+I	Integral del error, ∫e dt (mA·h)
+LA / LC	Lazo abierto / lazo cerrado
+λ (lambda)	Raíz de la ecuación característica = autovalor de la matriz A
+τ_dom	Constante de tiempo del modo más lento del lazo
+dt, t0, tf	Paso de integración (0,0125 h), tiempo inicial y tiempo final de simulación
+
+SCADA (apunte)
+
+Sigla	Significado
+SCADA	Supervisory Control And Data Acquisition: supervisión, control y adquisición de datos
+DCS	Distributed Control System: sistema de control distribuido
+MTU	Master Terminal Unit: puesto central
+RTU	Remote Terminal Unit: unidad terminal remota
+PLC	Controlador lógico programable
+PAC	Controlador de automatización programable
+HMI	Human-Machine Interface: interfaz hombre-máquina
+LAN	Red de área local
+
+Instrumentación (TPs anteriores)
+
+Sigla	Significado
+A/D, D/A	Conversión analógico-digital y digital-analógico
+FSR	Full-scale range: rango de escala completa
+Q	Error absoluto de cuantización, FSR/2ⁿ (convención de la cátedra)
+n	Cantidad de bits del conversor
