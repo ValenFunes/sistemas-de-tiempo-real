@@ -174,7 +174,7 @@ if __name__ == "__main__":
                 (700, 500), (1000, 100), (1000, 500), (1200, 100),
                 (1200, 500)]
     # buscamos los valores óptimos dependiendo de qué objetivo querramos conseguir
-    casos_objetivos = [(2000, 1500), (1000, 1000), (500, 750)]
+    casos_objetivos = [(3500, 50), (1000, 1000), (500, 750)]
 
     resultados = [simular_lazo_pid(kc, kd, 0.0, v, dt, Ti0, **lazo, **valvula,
                                    **proceso) for kc, kd in casos_objetivos]
