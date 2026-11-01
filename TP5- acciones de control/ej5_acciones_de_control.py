@@ -83,10 +83,11 @@ def simular_lazo_pid(kc, kd, ki, v, dt, Ti0, kt, kh, FSV, FK, Te, C1, C2, V, M,
     # Valor final teórico: con ki > 0 la integral anula el error; sin ella
     # queda el mismo error estacionario del lazo con acción P
     K = ganancia_lazo(ganancia_proceso(M, C2, V), FK / FSV, kt, kc, kh)
+    Ti_P = valor_estacionario_lc(v, Te, K)   # lo que alcanzaría el P solo
     if ki > 0:
         Ti_ss, ee = v, 0.0
     else:
-        Ti_ss, ee = valor_estacionario_lc(v, Te, K), error_estacionario(v, Te, K)
+        Ti_ss, ee = Ti_P, error_estacionario(v, Te, K)
 
     horizonte = tf if tf is not None else n_tau * tau_dom
     tf = math.ceil(horizonte / dt - 1e-9) * dt
@@ -95,23 +96,33 @@ def simular_lazo_pid(kc, kd, ki, v, dt, Ti0, kt, kh, FSV, FK, Te, C1, C2, V, M,
                               v=v, kc=kc, kd=kd, ki=ki, kt=kt, kh=kh,
                               FSV=FSV, FK=FK, Te=Te, C1=C1, C2=C2, V=V, M=M)
 
-    return {"kc": kc, "kd": kd, "ki": ki, "K": K, "Ti_ss": Ti_ss, "ee": ee,
-            "lam": lam, "tau_dom": tau_dom, "t": t, "Ti": y[:, 0],
+    return {"kc": kc, "kd": kd, "ki": ki, "K": K, "Ti_ss": Ti_ss, "Ti_P": Ti_P,
+            "ee": ee, "lam": lam, "tau_dom": tau_dom, "t": t, "Ti": y[:, 0],
             "Cg": y[:, 1], "Ti0": Ti0, "v": v, "dt": dt}
 
+def tiempo_establecimiento(t, Ti, Ti0, tol=0.02):
+    """Primer instante desde el cual Ti queda dentro de +-tol del cambio total."""
+    Ti_final = Ti[-1]
+    banda = tol * abs(Ti_final - Ti0)
+    fuera = np.where(np.abs(Ti - Ti_final) > banda)[0]
+    return 0.0 if len(fuera) == 0 else t[fuera[-1] + 1]
 
 def graficar_lazo_pid(res, titulo):
     """Un gráfico por caso: curva de Ti, valor deseado y Ti estacionario."""
     t, Ti, v, Ti0, Ti_ss = (res["t"], res["Ti"], res["v"], res["Ti0"],
                             res["Ti_ss"])
     ax = graficar_respuesta(t, Ti, label="Ti simulada", titulo=titulo)
-    ax.axhline(v, color="tab:red", linewidth=1.5,
-               label=f"Valor deseado = {v:g} ºC")
-    ax.axhline(Ti_ss, color="tab:green", linestyle=":", linewidth=1.5,
-               label=f"Ti estacionario = {Ti_ss:.2f} ºC")
+    Ti_fin = Ti[-1]   # valor de la curva simulada cuando se estaciona
+    ax.axhline(Ti_fin, color="tab:green", linestyle=":", linewidth=1.5,
+               label=f"Ti estacionario = {Ti_fin:.3f} ºC")
+    # Con acción integral: nivel al que llegaría el lazo con el P solo
+    hay_P = res["ki"] > 0
+    if hay_P:
+        ax.axhline(res["Ti_P"], color="gray", linestyle="--", linewidth=1.2,
+                   label=f"Ti solo con P (sin integral) = {res['Ti_P']:.2f} ºC")
     ax.set_ylim(Ti0 - 1, max(v, Ti.max()) + 1)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=3,
-              fontsize=9)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14),
+              ncol=2 if hay_P else 3, fontsize=9)
     return ax
 
 
@@ -169,43 +180,94 @@ if __name__ == "__main__":
     valvula = dict(FSV=2.5, FK=5.0)
     v, Ti0, dt = 30.0, 20.0, 0.0125
 
-    # ---------------- 1) Acción PD ----------------
-    casos_pd = [(500, 100), (500, 500), (700, 100), 
-                (700, 500), (1000, 100), (1000, 500), (1200, 100),
-                (1200, 500)]
-    # buscamos los valores óptimos dependiendo de qué objetivo querramos conseguir
-    casos_objetivos = [(3500, 50), (1000, 1000), (500, 750)]
+    # # ---------------- 1) Acción PD ----------------
+    # casos_pd = [(500, 100), (500, 500), (700, 100), 
+    #             (700, 500), (1000, 100), (1000, 500), (1200, 100),
+    #             (1200, 500)]
+    # # buscamos los valores óptimos dependiendo de qué objetivo querramos conseguir
+    # casos_objetivos = [(3500, 50), (1000, 1000), (500, 750)]
 
-    resultados = [simular_lazo_pid(kc, kd, 0.0, v, dt, Ti0, **lazo, **valvula,
-                                   **proceso) for kc, kd in casos_objetivos]
+    # resultados = [simular_lazo_pid(kc, kd, 0.0, v, dt, Ti0, **lazo, **valvula,
+    #                                **proceso) for kc, kd in casos_objetivos]
 
-    print(f"{'caso':>16} {'tf [h]':>8} {'Ti máx':>8} {'Ti final':>9} {'Ti_ss':>8}")
-    for r in resultados:
-        print(f"{etiqueta_controlador(r['kc'], r['kd']):>16} {r['t'][-1]:>8.1f} "
-              f"{r['Ti'].max():>8.3f} {r['Ti'][-1]:>9.3f} {r['Ti_ss']:>8.3f}")
+    # print(f"{'caso':>16} {'tf [h]':>8} {'Ti máx':>8} {'Ti final':>9} {'Ti_ss':>8}")
+    # for r in resultados:
+    #     print(f"{etiqueta_controlador(r['kc'], r['kd']):>16} {r['t'][-1]:>8.1f} "
+    #           f"{r['Ti'].max():>8.3f} {r['Ti'][-1]:>9.3f} {r['Ti_ss']:>8.3f}")
+
+    # # a) un gráfico por caso
+    # for r in resultados:
+    #     titulo = "PD - " + etiqueta_controlador(r["kc"], r["kd"])
+    #     ax = graficar_lazo_pid(r, titulo)
+    #     ax.figure.savefig(f"tp5_pd_kc{r['kc']}_kd{r['kd']}.png",
+    #                       dpi=150, bbox_inches="tight")
+    #     plt.close(ax.figure)
+
+    # # b) comparación: un color por kc, trazo continuo kd=100 y punteado kd=500
+    # # Mismo horizonte para todas (el del lazo más lento) para compartir eje
+    # tf_comun = max(r["t"][-1] for r in resultados)
+    # comparacion = [simular_lazo_pid(kc, kd, 0.0, v, dt, Ti0, tf=tf_comun,
+    #                                 **lazo, **valvula, **proceso)
+    #                for kc, kd in casos_objetivos]
+
+    # # colores = {500: "C0", 700: "C1", 1000: "C2", 1200: "C3"}
+    # colores = {500: "C0", 2000: "C1", 1000: "C2"}
+    
+    # estilos = [dict(color=colores[r["kc"]],
+    #            linestyle="-" if r["kd"] == 2000 else "--")
+    #            for r in comparacion]
+    # ax = graficar_comparacion_pid(comparacion, estilos,
+    #                               "TP5 - Acción PD: comparación", t_max=10)
+    # ax.figure.savefig("tp5_pd_comparacion.png", dpi=150, bbox_inches="tight")
+    # plt.close(ax.figure)
+    
+    
+    
+        # ---------------- 2) Acción PI ----------------
+    casos_pi = [(10, 0.5), (10, 1), (10, 5), (10, 10),
+                (50, 0.5), (50, 1), (50, 5), (50, 10)]
+
+    resultados_pi = [simular_lazo_pid(kc, 0.0, ki, v, dt, Ti0, **lazo, **valvula,
+                                      **proceso) for kc, ki in casos_pi]
+
+    print(f"\n{'caso':>16} {'tf [h]':>8} {'Ti máx':>8} {'Sobrepico':>10} "
+          f"{'Ti final':>9} {'ts 2% [h]':>10}")
+    for r in resultados_pi:
+        fin = r["Ti"][-1]
+        sobre = max(0.0, (r["Ti"].max() - fin) / (fin - Ti0) * 100)
+        ts = tiempo_establecimiento(r["t"], r["Ti"], Ti0)
+        print(f"{etiqueta_controlador(r['kc'], 0, r['ki']):>16} {r['t'][-1]:>8.1f} "
+              f"{r['Ti'].max():>8.3f} {sobre:>9.1f}% {fin:>9.3f} {ts:>10.1f}")
 
     # a) un gráfico por caso
-    for r in resultados:
-        titulo = "PD - " + etiqueta_controlador(r["kc"], r["kd"])
+    for r in resultados_pi:
+        titulo = "PI - " + etiqueta_controlador(r["kc"], 0, r["ki"])
         ax = graficar_lazo_pid(r, titulo)
-        ax.figure.savefig(f"tp5_pd_kc{r['kc']}_kd{r['kd']}.png",
+        ax.figure.savefig(f"tp5_pi_kc{r['kc']}_ki{r['ki']:g}.png",
                           dpi=150, bbox_inches="tight")
         plt.close(ax.figure)
 
-    # b) comparación: un color por kc, trazo continuo kd=100 y punteado kd=500
-    # Mismo horizonte para todas (el del lazo más lento) para compartir eje
-    tf_comun = max(r["t"][-1] for r in resultados)
-    comparacion = [simular_lazo_pid(kc, kd, 0.0, v, dt, Ti0, tf=tf_comun,
-                                    **lazo, **valvula, **proceso)
-                   for kc, kd in casos_objetivos]
+    # b) comparación: un color por ki, trazo continuo kc=10 y punteado kc=50
+    tf_comun = max(r["t"][-1] for r in resultados_pi)
+    comparacion_pi = [simular_lazo_pid(kc, 0.0, ki, v, dt, Ti0, tf=tf_comun,
+                                       **lazo, **valvula, **proceso)
+                      for kc, ki in casos_pi]
+    colores_ki = {0.5: "C0", 1: "C1", 5: "C2", 10: "C3"}
+    estilos_pi = [dict(color=colores_ki[r["ki"]],
+                       linestyle="-" if r["kc"] == 10 else "--")
+                  for r in comparacion_pi]
 
-    # colores = {500: "C0", 700: "C1", 1000: "C2", 1200: "C3"}
-    colores = {500: "C0", 2000: "C1", 1000: "C2"}
-    
-    estilos = [dict(color=colores[r["kc"]],
-               linestyle="-" if r["kd"] == 2000 else "--")
-               for r in comparacion]
-    ax = graficar_comparacion_pid(comparacion, estilos,
-                                  "TP5 - Acción PD: comparación", t_max=10)
-    ax.figure.savefig("tp5_pd_comparacion.png", dpi=150, bbox_inches="tight")
+    # b1) zoom a las primeras 60 h: se ven los casos rápidos
+    ax = graficar_comparacion_pid(comparacion_pi, estilos_pi,
+                                  "TP5 - Acción PI: comparación (0 a 60 h)",
+                                  t_max=60)
+    ax.figure.savefig("tp5_pi_comparacion_60h.png", dpi=150, bbox_inches="tight")
+    plt.close(ax.figure)
+
+    # b2) tiempo en escala logarítmica: se ven todos los casos completos
+    ax = graficar_comparacion_pid(comparacion_pi, estilos_pi,
+                                  "TP5 - Acción PI: comparación (tiempo en escala log)")
+    ax.set_xscale("log")
+    ax.set_xlim(0.1, tf_comun)
+    ax.figure.savefig("tp5_pi_comparacion_log.png", dpi=150, bbox_inches="tight")
     plt.close(ax.figure)
