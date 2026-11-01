@@ -91,14 +91,18 @@ def simular_lazo_pid(kc, kd, ki, v, dt, Ti0, kt, kh, FSV, FK, Te, C1, C2, V, M,
 
     horizonte = tf if tf is not None else n_tau * tau_dom
     tf = math.ceil(horizonte / dt - 1e-9) * dt
+        # Ventana del transitorio "rápido": 8 constantes de tiempo del segundo modo
+    # más lento (el más lento suele ser el de la integral)
+    re_ord = np.sort(np.abs(lam.real))
+    t_zoom = min(8.0 / re_ord[1], tf)
 
     t, y = euler_simulate_vec(modelo_lazo_pid, [Ti0, 0.0, 0.0], 0, tf, dt,
                               v=v, kc=kc, kd=kd, ki=ki, kt=kt, kh=kh,
                               FSV=FSV, FK=FK, Te=Te, C1=C1, C2=C2, V=V, M=M)
 
     return {"kc": kc, "kd": kd, "ki": ki, "K": K, "Ti_ss": Ti_ss, "Ti_P": Ti_P,
-            "ee": ee, "lam": lam, "tau_dom": tau_dom, "t": t, "Ti": y[:, 0],
-            "Cg": y[:, 1], "Ti0": Ti0, "v": v, "dt": dt}
+            "ee": ee, "lam": lam, "tau_dom": tau_dom, "t_zoom": t_zoom,
+            "t": t, "Ti": y[:, 0], "Cg": y[:, 1], "Ti0": Ti0, "v": v, "dt": dt}
 
 def tiempo_establecimiento(t, Ti, Ti0, tol=0.02):
     """Primer instante desde el cual Ti queda dentro de +-tol del cambio total."""
@@ -125,6 +129,68 @@ def graficar_lazo_pid(res, titulo):
               ncol=2 if hay_P else 3, fontsize=9)
     return ax
 
+def indices_para_graficar(n, n_full=20000, n_log=3000):
+    """
+    Índices a graficar: resolución completa al principio y espaciados en escala
+    logarítmica después (una curva de 1,3 millones de puntos pesa de más).
+    """
+    if n <= n_full + n_log:
+        return np.arange(n)
+    resto = np.geomspace(n_full, n - 1, n_log).astype(int)
+    return np.unique(np.concatenate([np.arange(n_full), resto, [n - 1]]))
+
+
+def graficar_lazo_pid_2escalas(res, titulo):
+    """
+    Un caso en dos paneles: a la izquierda las primeras horas (escala lineal,
+    el transitorio rápido) y a la derecha todo el horizonte con el tiempo en
+    escala logarítmica (se ve cuánto tarda la integral en cerrar el error).
+    """
+    t, Ti, v, Ti0 = res["t"], res["Ti"], res["v"], res["Ti0"]
+    ix = indices_para_graficar(len(t))
+    nombre = "PD" if res["kd"] > 0 else "P"
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+    for ax in (ax1, ax2):
+        ax.plot(t[ix], Ti[ix], linewidth=2, label="Ti simulada")
+        ax.axhline(v, color="tab:red", linewidth=1.5,
+                   label=f"Valor deseado = {v:g} ºC")
+        ax.axhline(Ti[-1], color="tab:green", linestyle=":", linewidth=1.5,
+                   label=f"Ti estacionario = {Ti[-1]:.3f} ºC")
+        ax.axhline(res["Ti_P"], color="gray", linestyle="--", linewidth=1.2,
+                   label=f"Ti solo con {nombre} (sin integral) = {res['Ti_P']:.2f} ºC")
+        ax.set_xlabel("Tiempo [h]")
+        ax.grid(True, alpha=0.3)
+
+    ax1.set_xlim(0, res["t_zoom"])
+    ax1.set_title(f"Primeras {res['t_zoom']:.0f} h")
+    ax1.set_ylabel("Ti [ºC]")
+    ax2.set_xscale("log")
+    ax2.set_xlim(0.1, t[-1])
+    ax2.set_title(f"Todo el horizonte ({t[-1]:.0f} h, tiempo en escala log)")
+    ax1.set_ylim(Ti0 - 1, max(v, Ti.max()) + 1)
+
+    fig.suptitle(titulo)
+    fig.legend(*ax1.get_legend_handles_labels(), loc="upper center",
+               bbox_to_anchor=(0.5, 0.0), ncol=4, fontsize=9)
+    fig.tight_layout()
+    return fig
+
+
+def extender_resultado(res, tf):
+    """
+    Copia del resultado con un punto más en t = tf, con el último valor de Ti.
+    Se usa solo para dibujar: las curvas que ya se estabilizaron (8 constantes
+    de tiempo) llegan al mismo eje que la más lenta sin volver a simular.
+    """
+    if res["t"][-1] >= tf:
+        return res
+    ext = dict(res)
+    ext["t"] = np.append(res["t"], tf)
+    ext["Ti"] = np.append(res["Ti"], res["Ti"][-1])
+    return ext
+
+
 
 def graficar_comparacion_pid(resultados, estilos, titulo, t_max=None):
     """
@@ -133,9 +199,11 @@ def graficar_comparacion_pid(resultados, estilos, titulo, t_max=None):
     que las curvas rápidas no queden aplastadas por la más lenta.
     """
     v, Ti0 = resultados[0]["v"], resultados[0]["Ti0"]
-    curvas = [(r["t"], r["Ti"],
-               etiqueta_controlador(r["kc"], r["kd"], r["ki"]))
-              for r in resultados]
+    curvas = []
+    for r in resultados:
+        ix = indices_para_graficar(len(r["t"]))
+        curvas.append((r["t"][ix], r["Ti"][ix],
+                       etiqueta_controlador(r["kc"], r["kd"], r["ki"])))
     ax = comparar_respuestas(curvas, titulo=titulo)
     for linea, estilo in zip(ax.lines, estilos):
         linea.set_linewidth(1.6)
@@ -223,51 +291,101 @@ if __name__ == "__main__":
     
     
     
-        # ---------------- 2) Acción PI ----------------
-    casos_pi = [(10, 0.5), (10, 1), (10, 5), (10, 10),
-                (50, 0.5), (50, 1), (50, 5), (50, 10)]
+    #     # ---------------- 2) Acción PI ----------------
+    # casos_pi = [(10, 0.5), (10, 1), (10, 5), (10, 10),
+    #             (50, 0.5), (50, 1), (50, 5), (50, 10)]
 
-    resultados_pi = [simular_lazo_pid(kc, 0.0, ki, v, dt, Ti0, **lazo, **valvula,
-                                      **proceso) for kc, ki in casos_pi]
+    # resultados_pi = [simular_lazo_pid(kc, 0.0, ki, v, dt, Ti0, **lazo, **valvula,
+    #                                   **proceso) for kc, ki in casos_pi]
 
-    print(f"\n{'caso':>16} {'tf [h]':>8} {'Ti máx':>8} {'Sobrepico':>10} "
+    # print(f"\n{'caso':>16} {'tf [h]':>8} {'Ti máx':>8} {'Sobrepico':>10} "
+    #       f"{'Ti final':>9} {'ts 2% [h]':>10}")
+    # for r in resultados_pi:
+    #     fin = r["Ti"][-1]
+    #     sobre = max(0.0, (r["Ti"].max() - fin) / (fin - Ti0) * 100)
+    #     ts = tiempo_establecimiento(r["t"], r["Ti"], Ti0)
+    #     print(f"{etiqueta_controlador(r['kc'], 0, r['ki']):>16} {r['t'][-1]:>8.1f} "
+    #           f"{r['Ti'].max():>8.3f} {sobre:>9.1f}% {fin:>9.3f} {ts:>10.1f}")
+
+    # # a) un gráfico por caso
+    # for r in resultados_pi:
+    #     titulo = "PI - " + etiqueta_controlador(r["kc"], 0, r["ki"])
+    #     ax = graficar_lazo_pid(r, titulo)
+    #     ax.figure.savefig(f"tp5_pi_kc{r['kc']}_ki{r['ki']:g}.png",
+    #                       dpi=150, bbox_inches="tight")
+    #     plt.close(ax.figure)
+
+    # # b) comparación: un color por ki, trazo continuo kc=10 y punteado kc=50
+    # tf_comun = max(r["t"][-1] for r in resultados_pi)
+    # comparacion_pi = [simular_lazo_pid(kc, 0.0, ki, v, dt, Ti0, tf=tf_comun,
+    #                                    **lazo, **valvula, **proceso)
+    #                   for kc, ki in casos_pi]
+    # colores_ki = {0.5: "C0", 1: "C1", 5: "C2", 10: "C3"}
+    # estilos_pi = [dict(color=colores_ki[r["ki"]],
+    #                    linestyle="-" if r["kc"] == 10 else "--")
+    #               for r in comparacion_pi]
+
+    # # b1) zoom a las primeras 60 h: se ven los casos rápidos
+    # ax = graficar_comparacion_pid(comparacion_pi, estilos_pi,
+    #                               "TP5 - Acción PI: comparación (0 a 60 h)",
+    #                               t_max=60)
+    # ax.figure.savefig("tp5_pi_comparacion_60h.png", dpi=150, bbox_inches="tight")
+    # plt.close(ax.figure)
+
+    # # b2) tiempo en escala logarítmica: se ven todos los casos completos
+    # ax = graficar_comparacion_pid(comparacion_pi, estilos_pi,
+    #                               "TP5 - Acción PI: comparación (tiempo en escala log)")
+    # ax.set_xscale("log")
+    # ax.set_xlim(0.1, tf_comun)
+    # ax.figure.savefig("tp5_pi_comparacion_log.png", dpi=150, bbox_inches="tight")
+    # plt.close(ax.figure)
+    
+    
+    
+    # ---------------- 3) Acción PID ----------------
+    casos_pid = [(10, 50, 0.5), (10, 100, 1), (10, 100, 5),
+                 (100, 100, 0.5), (100, 100, 1), (100, 500, 5),
+                 (500, 100, 0.5), (500, 500, 1), (500, 500, 5),
+                 (1000, 100, 0.5), (1000, 500, 1), (1000, 500, 5)]
+
+    resultados_pid = [simular_lazo_pid(kc, kd, ki, v, dt, Ti0, **lazo, **valvula,
+                                       **proceso) for kc, kd, ki in casos_pid]
+
+    print(f"\n{'caso':>22} {'tf [h]':>8} {'Ti máx':>8} {'Sobrepico':>10} "
           f"{'Ti final':>9} {'ts 2% [h]':>10}")
-    for r in resultados_pi:
+    for r in resultados_pid:
         fin = r["Ti"][-1]
         sobre = max(0.0, (r["Ti"].max() - fin) / (fin - Ti0) * 100)
         ts = tiempo_establecimiento(r["t"], r["Ti"], Ti0)
-        print(f"{etiqueta_controlador(r['kc'], 0, r['ki']):>16} {r['t'][-1]:>8.1f} "
-              f"{r['Ti'].max():>8.3f} {sobre:>9.1f}% {fin:>9.3f} {ts:>10.1f}")
+        print(f"{etiqueta_controlador(r['kc'], r['kd'], r['ki']):>22} "
+              f"{r['t'][-1]:>8.0f} {r['Ti'].max():>8.3f} {sobre:>9.1f}% "
+              f"{fin:>9.3f} {ts:>10.0f}")
 
-    # a) un gráfico por caso
-    for r in resultados_pi:
-        titulo = "PI - " + etiqueta_controlador(r["kc"], 0, r["ki"])
-        ax = graficar_lazo_pid(r, titulo)
-        ax.figure.savefig(f"tp5_pi_kc{r['kc']}_ki{r['ki']:g}.png",
-                          dpi=150, bbox_inches="tight")
-        plt.close(ax.figure)
+    # a) un gráfico por caso (dos escalas de tiempo)
+    for r in resultados_pid:
+        titulo = "PID - " + etiqueta_controlador(r["kc"], r["kd"], r["ki"])
+        fig = graficar_lazo_pid_2escalas(r, titulo)
+        fig.savefig(f"tp5_pid_kc{r['kc']}_kd{r['kd']}_ki{r['ki']:g}.png",
+                    dpi=150, bbox_inches="tight")
+        plt.close(fig)
 
-    # b) comparación: un color por ki, trazo continuo kc=10 y punteado kc=50
-    tf_comun = max(r["t"][-1] for r in resultados_pi)
-    comparacion_pi = [simular_lazo_pid(kc, 0.0, ki, v, dt, Ti0, tf=tf_comun,
-                                       **lazo, **valvula, **proceso)
-                      for kc, ki in casos_pi]
-    colores_ki = {0.5: "C0", 1: "C1", 5: "C2", 10: "C3"}
-    estilos_pi = [dict(color=colores_ki[r["ki"]],
-                       linestyle="-" if r["kc"] == 10 else "--")
-                  for r in comparacion_pi]
+    # b) comparación: un color por kc, trazo según ki (. = 0,5; -- = 1; - = 5)
+    tf_comun = max(r["t"][-1] for r in resultados_pid)
+    comparacion_pid = [extender_resultado(r, tf_comun) for r in resultados_pid]
+    colores_kc = {10: "C0", 100: "C1", 500: "C2", 1000: "C3"}
+    trazos_ki = {0.5: ":", 1: "--", 5: "-"}
+    estilos_pid = [dict(color=colores_kc[r["kc"]], linestyle=trazos_ki[r["ki"]])
+                   for r in comparacion_pid]
 
-    # b1) zoom a las primeras 60 h: se ven los casos rápidos
-    ax = graficar_comparacion_pid(comparacion_pi, estilos_pi,
-                                  "TP5 - Acción PI: comparación (0 a 60 h)",
-                                  t_max=60)
-    ax.figure.savefig("tp5_pi_comparacion_60h.png", dpi=150, bbox_inches="tight")
+    ax = graficar_comparacion_pid(comparacion_pid, estilos_pid,
+                                  "TP5 - Acción PID: comparación (0 a 40 h)",
+                                  t_max=40)
+    ax.figure.savefig("tp5_pid_comparacion_40h.png", dpi=150, bbox_inches="tight")
     plt.close(ax.figure)
 
-    # b2) tiempo en escala logarítmica: se ven todos los casos completos
-    ax = graficar_comparacion_pid(comparacion_pi, estilos_pi,
-                                  "TP5 - Acción PI: comparación (tiempo en escala log)")
+    ax = graficar_comparacion_pid(comparacion_pid, estilos_pid,
+                                  "TP5 - Acción PID: comparación (tiempo en escala log)")
     ax.set_xscale("log")
     ax.set_xlim(0.1, tf_comun)
-    ax.figure.savefig("tp5_pi_comparacion_log.png", dpi=150, bbox_inches="tight")
+    ax.figure.savefig("tp5_pid_comparacion_log.png", dpi=150, bbox_inches="tight")
     plt.close(ax.figure)
